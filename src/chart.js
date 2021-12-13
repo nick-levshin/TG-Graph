@@ -1,5 +1,14 @@
 import { tooltip } from './tooltip';
-import { toDate, isOver, line, circle, boundaries, css } from './utils';
+import {
+  toDate,
+  isOver,
+  line,
+  circle,
+  boundaries,
+  css,
+  toCoords,
+} from './utils';
+import { sliderChart } from './slider';
 
 const WIDTH = 600;
 const HEIGHT = 200;
@@ -11,9 +20,10 @@ const VIEW_WIDTH = DPI_WIDTH;
 const ROWS_COUNT = 5;
 
 export function chart(root, data) {
-  const canvas = root.querySelector('canvas');
-  const ctx = canvas.getContext('2d');
+  const canvas = root.querySelector('[data-el="main"]');
   const tip = tooltip(root.querySelector('[data-el="tooltip"]'));
+  sliderChart(root.querySelector('[data-el="slider"]'), data, DPI_WIDTH);
+  const ctx = canvas.getContext('2d');
   let raf;
   css(canvas, {
     width: WIDTH + 'px',
@@ -41,7 +51,7 @@ export function chart(root, data) {
     proxy.mouse = {
       x: (clientX - left) * 2,
       tooltip: {
-        left: clientX - left * 1.2,
+        left: clientX - left,
         top: clientY - top,
       },
     };
@@ -70,17 +80,19 @@ export function chart(root, data) {
     yAxis(yMin, yMax);
     xAxis(xData, yData, xRatio);
 
-    yData.map(toCoords(xRatio, yRatio)).forEach((coords, i) => {
-      const color = data.colors[yData[i][0]];
-      line(ctx, coords, { color });
+    yData
+      .map(toCoords(xRatio, yRatio, DPI_HEIGHT, PADDING))
+      .forEach((coords, i) => {
+        const color = data.colors[yData[i][0]];
+        line(ctx, coords, { color });
 
-      for (const [x, y] of coords) {
-        if (isOver(proxy.mouse, x, coords.length, DPI_WIDTH)) {
-          circle(ctx, [x, y], color);
-          break;
+        for (const [x, y] of coords) {
+          if (isOver(proxy.mouse, x, coords.length, DPI_WIDTH)) {
+            circle(ctx, [x, y], color);
+            break;
+          }
         }
-      }
-    });
+      });
   }
 
   function xAxis(xData, yData, xRatio) {
@@ -146,14 +158,4 @@ export function chart(root, data) {
       canvas.removeEventListener('mouseleave', mouseleave);
     },
   };
-}
-
-function toCoords(xRatio, yRatio) {
-  return (col) =>
-    col
-      .map((y, i) => [
-        Math.floor((i - 1) * xRatio),
-        Math.floor(DPI_HEIGHT - PADDING - y * yRatio),
-      ])
-      .filter((_, i) => i !== 0);
 }
