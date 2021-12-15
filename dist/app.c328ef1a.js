@@ -125,6 +125,8 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.boundaries = boundaries;
 exports.circle = circle;
+exports.computeXRation = computeXRation;
+exports.computeYRation = computeYRation;
 exports.css = css;
 exports.isOver = isOver;
 exports.line = line;
@@ -144,6 +146,14 @@ function _createForOfIteratorHelper(o, allowArrayLike) { var it = typeof Symbol 
 function _unsupportedIterableToArray(o, minLen) { if (!o) return; if (typeof o === "string") return _arrayLikeToArray(o, minLen); var n = Object.prototype.toString.call(o).slice(8, -1); if (n === "Object" && o.constructor) n = o.constructor.name; if (n === "Map" || n === "Set") return Array.from(o); if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _arrayLikeToArray(o, minLen); }
 
 function _arrayLikeToArray(arr, len) { if (len == null || len > arr.length) len = arr.length; for (var i = 0, arr2 = new Array(len); i < len; i++) { arr2[i] = arr[i]; } return arr2; }
+
+function computeYRation(height, max, min) {
+  return (max - min) / height;
+}
+
+function computeXRation(width, length) {
+  return width / (length - 2);
+}
 
 function toDate(timestamp) {
   var shotrMonth = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -230,10 +240,10 @@ function css(el) {
   Object.assign(el.style, styles);
 }
 
-function toCoords(xRatio, yRatio, DPI_HEIGHT, PADDING) {
+function toCoords(xRatio, yRatio, DPI_HEIGHT, PADDING, yMin) {
   return function (col) {
     return col.map(function (y, i) {
-      return [Math.floor((i - 1) * xRatio), Math.floor(DPI_HEIGHT - PADDING - y * yRatio)];
+      return [Math.floor((i - 1) * xRatio), Math.floor(DPI_HEIGHT - PADDING - (y - yMin) / yRatio)];
     }).filter(function (_, i) {
       return i !== 0;
     });
@@ -306,36 +316,159 @@ function _iterableToArrayLimit(arr, i) { var _i = arr == null ? null : typeof Sy
 
 function _arrayWithHoles(arr) { if (Array.isArray(arr)) return arr; }
 
+function noop() {}
+
 var HEIGHT = 40;
 var DPI_HEIGHT = HEIGHT * 2;
 
 function sliderChart(root, data, DPI_WIDTH) {
   var WIDTH = DPI_WIDTH / 2;
+  var minWidth = WIDTH * 0.05;
   var canvas = root.querySelector('canvas');
   var ctx = canvas.getContext('2d');
+  var nextFn = noop;
   canvas.width = DPI_WIDTH;
   canvas.height = DPI_HEIGHT;
   (0, _utils.css)(canvas, {
     width: WIDTH + 'px',
     height: HEIGHT + 'px'
   });
+  var $left = root.querySelector('[data-el="left"]');
+  var $window = root.querySelector('[data-el="window"]');
+  var $right = root.querySelector('[data-el="right"]');
+
+  function next() {
+    nextFn(getPosition());
+  }
+
+  function mousedown(event) {
+    var type = event.target.dataset.type;
+    var dimentions = {
+      left: parseInt($window.style.left),
+      right: parseInt($window.style.right),
+      width: parseInt($window.style.width)
+    };
+
+    if (type === 'window') {
+      var startX = event.pageX;
+
+      document.onmousemove = function (e) {
+        var delta = startX - e.pageX;
+
+        if (delta === 0) {
+          return;
+        }
+
+        var left = dimentions.left - delta;
+        var right = WIDTH - left - dimentions.width;
+        setPosition(left, right);
+        next();
+      };
+    } else if (type === 'left' || type === 'right') {
+      var _startX = event.pageX;
+
+      document.onmousemove = function (e) {
+        var delta = _startX - e.pageX;
+
+        if (delta === 0) {
+          return;
+        }
+
+        if (type === 'left') {
+          var left = WIDTH - (dimentions.width + delta) - dimentions.right;
+          var right = WIDTH - (dimentions.width + delta) - left;
+          setPosition(left, right);
+        } else {
+          var _right = WIDTH - (dimentions.width - delta) - dimentions.left;
+
+          setPosition(dimentions.left, _right);
+        }
+
+        next();
+      };
+    }
+  }
+
+  function mouseup() {
+    document.onmousemove = null;
+  }
+
+  root.addEventListener('mousedown', mousedown);
+  document.addEventListener('mouseup', mouseup);
+  var defaultWidth = WIDTH * 0.3;
+  setPosition(0, WIDTH - defaultWidth);
+
+  function setPosition(left, right) {
+    var w = WIDTH - right - left;
+
+    if (w < minWidth) {
+      (0, _utils.css)($window, {
+        width: minWidth + 'px'
+      });
+      return;
+    }
+
+    if (left < 0) {
+      (0, _utils.css)($window, {
+        left: '0px'
+      });
+      (0, _utils.css)($left, {
+        width: '0px'
+      });
+      return;
+    }
+
+    if (right < 0) {
+      (0, _utils.css)($window, {
+        right: '0px'
+      });
+      (0, _utils.css)($right, {
+        width: '0px'
+      });
+      return;
+    }
+
+    (0, _utils.css)($window, {
+      width: w + 'px',
+      left: left + 'px',
+      right: right + 'px'
+    });
+    (0, _utils.css)($right, {
+      width: right + 'px'
+    });
+    (0, _utils.css)($left, {
+      width: left + 'px'
+    });
+  }
+
+  function getPosition() {
+    var left = parseInt($left.style.width);
+    var right = WIDTH - parseInt($right.style.width);
+    return [left * 100 / WIDTH, right * 100 / WIDTH];
+  }
 
   var _boundaries = (0, _utils.boundaries)(data),
       _boundaries2 = _slicedToArray(_boundaries, 2),
       yMin = _boundaries2[0],
       yMax = _boundaries2[1];
 
-  var yRatio = DPI_HEIGHT / (yMax - yMin);
-  var xRatio = DPI_WIDTH / (data.columns[0].length - 2);
+  var xRatio = (0, _utils.computeXRation)(DPI_WIDTH, data.columns[0].length);
+  var yRatio = (0, _utils.computeYRation)(DPI_HEIGHT, yMax, yMin);
   var yData = data.columns.filter(function (col) {
     return data.types[col[0]] === 'line';
   });
-  yData.map((0, _utils.toCoords)(xRatio, yRatio, DPI_HEIGHT, -5)).forEach(function (coords, i) {
+  yData.map((0, _utils.toCoords)(xRatio, yRatio, DPI_HEIGHT, 0, yMin)).forEach(function (coords, i) {
     var color = data.colors[yData[i][0]];
     (0, _utils.line)(ctx, coords, {
       color: color
     });
   });
+  return {
+    subscribe: function subscribe(fn) {
+      nextFn = fn;
+      fn(getPosition());
+    }
+  };
 }
 },{"./utils":"utils.js"}],"chart.js":[function(require,module,exports) {
 "use strict";
@@ -377,7 +510,7 @@ var ROWS_COUNT = 5;
 function chart(root, data) {
   var canvas = root.querySelector('[data-el="main"]');
   var tip = (0, _tooltip.tooltip)(root.querySelector('[data-el="tooltip"]'));
-  (0, _slider.sliderChart)(root.querySelector('[data-el="slider"]'), data, DPI_WIDTH);
+  var slider = (0, _slider.sliderChart)(root.querySelector('[data-el="slider"]'), data, DPI_WIDTH);
   var ctx = canvas.getContext('2d');
   var raf;
   (0, _utils.css)(canvas, {
@@ -392,6 +525,9 @@ function chart(root, data) {
       raf = requestAnimationFrame(paint);
       return result;
     }
+  });
+  slider.subscribe(function (pos) {
+    proxy.pos = pos;
   });
   canvas.addEventListener('mousemove', mousemove);
   canvas.addEventListener('mouseleave', mouseleave);
@@ -424,23 +560,38 @@ function chart(root, data) {
 
   function paint() {
     clear();
+    var length = data.columns[0].length;
+    var leftIndex = Math.round(length * proxy.pos[0] / 100);
+    var rightIndex = Math.round(length * proxy.pos[1] / 100);
+    var columns = data.columns.map(function (col) {
+      var res = col.slice(leftIndex, rightIndex);
 
-    var _boundaries = (0, _utils.boundaries)(data),
+      if (typeof res[0] !== 'string') {
+        res.unshift(col[0]);
+      }
+
+      return res;
+    });
+
+    var _boundaries = (0, _utils.boundaries)({
+      columns: columns,
+      types: data.types
+    }),
         _boundaries2 = _slicedToArray(_boundaries, 2),
         yMin = _boundaries2[0],
         yMax = _boundaries2[1];
 
-    var yRatio = VIEW_HEIGHT / (yMax - yMin);
-    var xRatio = VIEW_WIDTH / (data.columns[0].length - 2);
-    var yData = data.columns.filter(function (col) {
+    var xRatio = (0, _utils.computeXRation)(VIEW_WIDTH, columns[0].length);
+    var yRatio = (0, _utils.computeYRation)(VIEW_HEIGHT, yMax, yMin);
+    var yData = columns.filter(function (col) {
       return data.types[col[0]] === 'line';
     });
-    var xData = data.columns.filter(function (col) {
+    var xData = columns.filter(function (col) {
       return data.types[col[0]] !== 'line';
     })[0];
     yAxis(yMin, yMax);
     xAxis(xData, yData, xRatio);
-    yData.map((0, _utils.toCoords)(xRatio, yRatio, DPI_HEIGHT, PADDING)).forEach(function (coords, i) {
+    yData.map((0, _utils.toCoords)(xRatio, yRatio, DPI_HEIGHT, PADDING, yMin)).forEach(function (coords, i) {
       var color = data.colors[yData[i][0]];
       (0, _utils.line)(ctx, coords, {
         color: color
@@ -676,7 +827,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "52966" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "65388" + '/');
 
   ws.onmessage = function (event) {
     checkedAssets = {};
